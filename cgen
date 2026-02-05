@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: cgen <project_name>"
+  echo "Example: cgen mylib"
+}
+
+if [[ $# -ne 1 ]]; then
+  usage
+  exit 1
+fi
+
+NAME="$1"
+
+# Basic validation
+if [[ ! "$NAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "Error: project_name must be letters/numbers/_/- only."
+  exit 1
+fi
+
+if [[ -e "$NAME" ]]; then
+  echo "Error: '$NAME' already exists."
+  exit 1
+fi
+
+UP="${NAME^^}"              # uppercase for macros
+SAFE="${NAME//-/_}"         # make macro-friendly if name has '-'
+UPSAFE="${SAFE^^}"
+
+mkdir -p "$NAME"/{examples,tests,build}
+
+# ---------- README ----------
+cat > "$NAME/README.md" <<EOF
+# $NAME
+
+Single-header, stb-style C library.
+
+## Quickstart
+\`\`\`bash
+make run
+make test
+\`\`\`
+
+## Usage
+In exactly one .c file:
+\`\`\`c
+#define ${UPSAFE}_IMPLEMENTATION
+#include "${NAME}.h"
+\`\`\`
+
+In other .c files:
+\`\`\`c
+#include "${NAME}.h"
+\`\`\`
+EOF
+
+
+# ---------- .gitignore ----------
+cat > "$NAME/.gitignore" <<'EOF'
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Coverage / sanitizers
+*.gcda
+*.gcno
+*.profraw
+EOF
+
+# ---------- Makefile ----------
+{
+  printf '%s\n' "CC ?= cc"
+  printf '%s\n' ""
+  printf '%s\n' 'CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -I.'
+  printf '%s\n' '# Uncomment while developing:'
+  printf '%s\n' '# CFLAGS += -g -fsanitize=address,undefined -fno-omit-frame-pointer'
+  printf '%s\n' '# LDFLAGS += -fsanitize=address,undefined'
+  printf '%s\n' ""
+  printf '%s\n' 'BUILD_DIR := build'
+  printf '%s\n' 'EXAMPLE := $(BUILD_DIR)/basic'
+  printf '%s\n' 'TESTBIN  := $(BUILD_DIR)/test_basic'
+  printf '%s\n' ""
+  printf '%s\n' '.PHONY: all run test clean'
+  printf '%s\n' ""
+  printf '%s\n' 'all: $(EXAMPLE) $(TESTBIN)'
+  printf '%s\n' ""
+  printf '%s\n' '$(BUILD_DIR):'
+  printf '\t%s\n' '@mkdir -p $(BUILD_DIR)'
+  printf '%s\n' ""
+  printf '%s\n' "\$(BUILD_DIR)/basic: examples/basic.c ${NAME}.h | \$(BUILD_DIR)"
+  printf '\t%s\n' '$(CC) $(CFLAGS) examples/basic.c -o $(EXAMPLE) $(LDFLAGS)'
+  printf '%s\n' ""
+  printf '%s\n' "\$(BUILD_DIR)/test_basic: tests/test_basic.c ${NAME}.h | \$(BUILD_DIR)"
+  printf '\t%s\n' '$(CC) $(CFLAGS) tests/test_basic.c -o $(TESTBIN) $(LDFLAGS)'
+  printf '%s\n' ""
+  printf '%s\n' 'run: $(EXAMPLE)'
+  printf '\t%s\n' './$(EXAMPLE)'
+  printf '%s\n' ""
+  printf '%s\n' 'test: $(TESTBIN)'
+  printf '\t%s\n' './$(TESTBIN)'
+  printf '%s\n' ""
+  printf '%s\n' 'clean:'
+  printf '\t%s\n' 'rm -rf $(BUILD_DIR)'
+} > "$NAME/Makefile"
+
+# ---------- Single-header library ----------
+cat > "$NAME/${NAME}.h" <<EOF
+#ifndef ${UPSAFE}_H_INCLUDED
+#define ${UPSAFE}_H_INCLUDED
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// ===================== Public API =====================
+// function signatures & data structres and whatnot 
+
+
+// ===================== End Public API =====================
+
+#ifdef __cplusplus
+}
+#endif
+
+// ===================== Implementation =====================
+// Define ${UPSAFE}_IMPLEMENTATION in exactly one .c/.cpp file before including this header.
+#ifdef ${UPSAFE}_IMPLEMENTATION
+
+#include <assert.h>
+
+//function definitions and gizmos go here
+
+#endif // ${UPSAFE}_IMPLEMENTATION
+#endif // ${UPSAFE}_H_INCLUDED
+EOF
+
+# ---------- Example ----------
+cat > "$NAME/examples/basic.c" <<EOF
+#define ${UPSAFE}_IMPLEMENTATION
+#include "${NAME}.h"
+
+#include <stdio.h>
+
+int main(void) {
+
+    printf("Hello project: %s\n", "${NAME}");
+    return 0;
+}
+EOF
+
+# ---------- Test ----------
+cat > "$NAME/tests/test_basic.c" <<EOF
+#define ${UPSAFE}_IMPLEMENTATION
+#include "${NAME}.h"
+
+#include <assert.h>
+#include <stdio.h>
+
+int main(void) {
+
+    printf("Hello from test: %s\n", "${NAME}");
+
+    return 0;
+}
+EOF
+
+# ---------- Git init ----------
+if command -v git >/dev/null 2>&1; then
+  (
+    cd "$NAME"
+    git init -q
+    git add .
+    if git config user.name >/dev/null && git config user.email >/dev/null; then
+      git commit -qm "Initial commit"
+    fi
+  )
+fi
+
+echo "Created project: $NAME"
+echo "Next:"
+echo "  cd $NAME"
+echo "  make run"
+echo "  make test"
