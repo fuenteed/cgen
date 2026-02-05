@@ -24,9 +24,9 @@ if [[ -e "$NAME" ]]; then
   exit 1
 fi
 
-UP="${NAME^^}"              # uppercase for macros
-SAFE="${NAME//-/_}"         # make macro-friendly if name has '-'
-UPSAFE="${SAFE^^}"
+SAFE="$(printf '%s' "$NAME" | tr '-' '_')"
+UPSAFE="$(printf '%s' "$SAFE" | tr '[:lower:]' '[:upper:]')"
+
 
 mkdir -p "$NAME"/{examples,tests,build}
 
